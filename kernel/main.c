@@ -31,11 +31,14 @@ main()
     xv6fs_register(); // register xv6fs
     net_init();      // network stack
     nfs_register();  // register NFS
+    printf("DEBUG: init disk\n");    
     virtio_disk_init(); // emulated hard disk
-    fsinit(ROOTDEV); // initialize root filesystem
+    // printf("DEBUG: fsinit\n");
+    // fsinit(ROOTDEV); // initialize root filesystem
     // Mount root filesystem using VFS
-    if(vfs_mount("rootdisk", "/", "xv6fs", 0) < 0)
-      panic("vfs_mount root failed");
+    // printf("DEBUG: vfs_mount\n");
+    // if(vfs_mount("rootdisk", "/", "xv6fs", 0) < 0)
+      // panic("vfs_mount root failed");
     printf("xv6: VFS and network stack initialized\n");
     userinit();      // first user process
     __sync_synchronize();

@@ -1,3 +1,6 @@
+#include "types.h"
+#include "fs.h"
+
 struct file {
   enum { FD_NONE, FD_PIPE, FD_INODE, FD_DEVICE } type;
   int ref; // reference count
@@ -28,7 +31,7 @@ struct inode {
   int valid;                         // Inode has been read from disk?
 
   // VFS fields
-  struct superblock *i_sb;           // Superblock pointer
+  struct vfs_superblock *i_sb;           // Superblock pointer
   struct inode_operations *i_op;     // Inode operations
   struct file_operations *i_fop;     // File operations
 

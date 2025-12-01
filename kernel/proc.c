@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "vfs.h"
 
 struct cpu cpus[NCPU];
 
@@ -517,6 +518,10 @@ forkret(void)
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
     fsinit(ROOTDEV);
+
+    printf("DEBUG: vfs_mount\n");
+    if(vfs_mount("rootdisk", "/", "xv6fs", 0) < 0)
+      panic("vfs_mount root failed");
 
     first = 0;
     // ensure other cores see first=0.

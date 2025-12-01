@@ -12,6 +12,7 @@
 #include "proc.h"
 #include "defs.h"
 #include "file.h"
+#include "fs.h"
 #include "vfs.h"
 
 // Global VFS state
@@ -90,7 +91,7 @@ int
 vfs_mount(const char *source, const char *target, const char *fstype, void *data)
 {
   struct filesystem_type *fs;
-  struct superblock *sb;
+  struct vfs_superblock *sb;
   struct vfsmount *mnt;
   struct inode *mountpoint = 0;
   uint dev = ROOTDEV;
@@ -236,7 +237,7 @@ vfs_namei(const char *path)
 {
   char name[DIRSIZ];
   struct inode *ip, *next;
-  const char *s;
+  //const char *s;
   int len;
 
   if(*path == '/') {
@@ -265,7 +266,7 @@ vfs_namei(const char *path)
       break;
 
     // Extract next component
-    s = path;
+    // s = path;
     len = 0;
     while(*path && *path != '/' && len < DIRSIZ) {
       name[len++] = *path++;

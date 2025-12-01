@@ -160,7 +160,7 @@ nfs_vfs_lookup(struct inode *dir, const char *name, struct inode **result)
 
 // NFS getattr operation
 static int
-nfs_getattr(struct inode *ip, struct stat *st)
+nfs_vfs_getattr(struct inode *ip, struct stat *st)
 {
   struct nfs_inode_info *nfs_ip = (struct nfs_inode_info *)ip->i_private;
 
@@ -199,7 +199,7 @@ static struct inode_operations nfs_inode_ops = {
   .unlink = 0,
   .mkdir = 0,
   .rmdir = 0,
-  .getattr = nfs_getattr,
+  .getattr = nfs_vfs_getattr,
 };
 
 static struct super_operations nfs_super_ops = {
@@ -224,10 +224,10 @@ parse_nfs_mount(const char *source, uint32 *server_ip, char *path)
 }
 
 // NFS mount function
-struct superblock*
+struct vfs_superblock*
 nfs_mount(uint dev, void *data)
 {
-  struct superblock *sb;
+  struct vfs_superblock *sb;
   struct nfs_mount *mnt;
   uint32 server_ip;
   char path[MAXPATH];
@@ -237,7 +237,7 @@ nfs_mount(uint dev, void *data)
     return 0;
 
   // Allocate VFS superblock
-  sb = (struct superblock*)kalloc();
+  sb = (struct vfs_superblock*)kalloc();
   if(!sb)
     return 0;
 

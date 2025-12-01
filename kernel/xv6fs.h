@@ -21,8 +21,8 @@ struct xv6fs_sb_info {
 };
 
 // xv6fs functions
-struct superblock* xv6fs_mount(uint dev, void *data);
-void xv6fs_kill_sb(struct superblock *sb);
+struct vfs_superblock* xv6fs_mount(uint dev, void *data);
+void xv6fs_kill_sb(struct vfs_superblock *sb);
 int xv6fs_register(void);
 
 // External operation tables
@@ -30,6 +30,8 @@ extern struct super_operations xv6fs_super_ops;
 extern struct inode_operations xv6fs_inode_ops;
 extern struct inode_operations xv6fs_dir_ops;
 extern struct file_operations xv6fs_file_ops;
+
+void xv6fs_init_inode(struct inode *ip, struct vfs_superblock *sb);
 
 // Helper functions to convert between VFS inode and xv6fs inode info
 static inline struct xv6fs_inode_info*

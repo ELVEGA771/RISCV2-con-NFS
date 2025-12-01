@@ -8,6 +8,8 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct vfs_superblock;
+struct filesystem_type;
 
 // bio.c
 void            binit(void);
@@ -42,7 +44,7 @@ int             vfs_umount(const char *target);
 
 // xv6fs.c
 int             xv6fs_register(void);
-void            xv6fs_init_inode(struct inode *ip, struct superblock *sb);
+void            xv6fs_init_inode(struct inode *ip, struct vfs_superblock *sb);
 
 // Network stack
 void            net_init(void);
@@ -78,6 +80,7 @@ void            stati(struct inode*, struct stat*);
 int             writei(struct inode*, int, uint64, uint, uint);
 void            itrunc(struct inode*);
 void            ireclaim(int);
+struct inode* 	iget(uint, uint);
 
 // kalloc.c
 void*           kalloc(void);

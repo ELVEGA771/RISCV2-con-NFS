@@ -76,7 +76,8 @@ ip_send(uint32 dst_ip, uchar proto, void *data, int len)
   hdr->len = htons(sizeof(struct ip_hdr) + len);
 
   acquire(&ip_lock);
-  hdr->id = htons(ip_id++);
+  hdr->id = htons(ip_id); // Usamos el valor actual
+  ip_id++;
   release(&ip_lock);
 
   hdr->flags_offset = 0;

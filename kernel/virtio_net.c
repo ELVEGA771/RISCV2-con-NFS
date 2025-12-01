@@ -12,26 +12,7 @@
 #include "sleeplock.h"
 #include "proc.h"
 #include "net.h"
-
-// virtio mmio control registers, mapped starting at 0x10002000.
-// from qemu virtio_mmio.h
-#define VIRTIO_MMIO_MAGIC_VALUE		0x000
-#define VIRTIO_MMIO_VERSION		0x004
-#define VIRTIO_MMIO_DEVICE_ID		0x008
-#define VIRTIO_MMIO_VENDOR_ID		0x00c
-#define VIRTIO_MMIO_DEVICE_FEATURES	0x010
-#define VIRTIO_MMIO_DRIVER_FEATURES	0x020
-#define VIRTIO_MMIO_GUEST_PAGE_SIZE	0x028
-#define VIRTIO_MMIO_QUEUE_SEL		0x030
-#define VIRTIO_MMIO_QUEUE_NUM_MAX	0x034
-#define VIRTIO_MMIO_QUEUE_NUM		0x038
-#define VIRTIO_MMIO_QUEUE_ALIGN		0x03c
-#define VIRTIO_MMIO_QUEUE_PFN		0x040
-#define VIRTIO_MMIO_QUEUE_READY		0x044
-#define VIRTIO_MMIO_QUEUE_NOTIFY	0x050
-#define VIRTIO_MMIO_INTERRUPT_STATUS	0x060
-#define VIRTIO_MMIO_INTERRUPT_ACK	0x064
-#define VIRTIO_MMIO_STATUS		0x070
+#include "virtio.h"
 
 // status register bits, from qemu virtio_config.h
 #define VIRTIO_CONFIG_S_ACKNOWLEDGE	1
@@ -41,11 +22,10 @@
 
 // device feature bits
 #define VIRTIO_NET_F_MAC 	(1 << 5)
-#define VIRTIO_F_ANY_LAYOUT	(1 << 27)
 
 // virtio network device
-#define VIRTIO1 0x10002000L
-#define VIRTIO1_IRQ 2
+// #define VIRTIO1 0x10002000L
+// #define VIRTIO1_IRQ 2
 
 // the address of virtio mmio register r.
 #define R(r) ((volatile uint32 *)(VIRTIO1 + (r)))
@@ -66,35 +46,8 @@ struct virtio_net_hdr {
 } __attribute__((packed));
 
 // a single descriptor, from the spec.
-struct virtq_desc {
-  uint64 addr;
-  uint32 len;
-  uint16 flags;
-  uint16 next;
-};
 #define VRING_DESC_F_NEXT  1 // chained with another descriptor
 #define VRING_DESC_F_WRITE 2 // device writes (vs read)
-
-// the (entire) avail ring, from the spec.
-struct virtq_avail {
-  uint16 flags; // always zero
-  uint16 idx;   // driver will write ring[idx] next
-  uint16 ring[NUM]; // descriptor numbers of chain heads
-  uint16 unused;
-};
-
-// one entry in the "used" ring, with which the
-// device tells the driver about completed requests.
-struct virtq_used_elem {
-  uint32 id;   // index of start of completed descriptor chain
-  uint32 len;
-};
-
-struct virtq_used {
-  uint16 flags; // always zero
-  uint16 idx;   // device increments when it adds a ring[] entry
-  struct virtq_used_elem ring[NUM];
-};
 
 // these are specific to virtio network.
 static struct virtq_desc *rx_desc;
@@ -132,16 +85,6 @@ alloc_rx_desc()
   return -1;
 }
 
-static void
-free_rx_desc(int i)
-{
-  if(i >= NUM)
-    panic("free_rx_desc");
-  if(rx_free[i])
-    panic("free_rx_desc");
-  rx_free[i] = 1;
-}
-
 static int
 alloc_tx_desc()
 {
@@ -154,16 +97,6 @@ alloc_tx_desc()
   return -1;
 }
 
-static void
-free_tx_desc(int i)
-{
-  if(i >= NUM)
-    panic("free_tx_desc");
-  if(tx_free[i])
-    panic("free_tx_desc");
-  tx_desc[i].addr = 0;
-  tx_free[i] = 1;
-}
 
 void
 virtio_net_init(void)
@@ -193,8 +126,8 @@ virtio_net_init(void)
 
   // Negotiate features
   uint64 features = *R(VIRTIO_MMIO_DEVICE_FEATURES);
-  features &= ~(1 << VIRTIO_NET_F_MAC);
-  features &= ~(1 << VIRTIO_F_ANY_LAYOUT);
+  features &= ~(1ULL << VIRTIO_NET_F_MAC);
+  features &= ~(1ULL << VIRTIO_F_ANY_LAYOUT);
   *R(VIRTIO_MMIO_DRIVER_FEATURES) = features;
 
   // Tell device that feature negotiation is complete
@@ -291,6 +224,17 @@ virtio_net_init(void)
   *R(VIRTIO_MMIO_QUEUE_NOTIFY) = 0;
 
   printf("virtio_net: initialized\n");
+}
+
+static void
+free_tx_desc(int i)
+{
+  if(i >= NUM)
+    panic("free_tx_desc");
+  if(tx_free[i])
+    panic("free_tx_desc");
+  tx_desc[i].addr = 0;
+  tx_free[i] = 1;
 }
 
 // Send a packet

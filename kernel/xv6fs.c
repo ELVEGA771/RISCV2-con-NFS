@@ -36,7 +36,7 @@ static int
 xv6fs_file_write(struct file *f, uint64 addr, int n)
 {
   struct inode *ip = f->ip;
-  int r, ret = 0;
+  int r;
   int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
   int i = 0;
 
@@ -129,7 +129,7 @@ struct super_operations xv6fs_super_ops = {
 
 // Initialize inode with xv6fs operations
 void
-xv6fs_init_inode(struct inode *ip, struct superblock *sb)
+xv6fs_init_inode(struct inode *ip, struct vfs_superblock *sb)
 {
   ip->i_sb = sb;
 
@@ -145,14 +145,14 @@ xv6fs_init_inode(struct inode *ip, struct superblock *sb)
 }
 
 // Mount function for xv6fs
-struct superblock*
+struct vfs_superblock*
 xv6fs_mount(uint dev, void *data)
 {
-  struct superblock *vfs_sb;
+  struct vfs_superblock *vfs_sb;
   struct xv6fs_sb_info *sbi;
 
   // Allocate VFS superblock
-  vfs_sb = (struct superblock*)kalloc();
+  vfs_sb = (struct vfs_superblock*)kalloc();
   if(!vfs_sb)
     return 0;
 
@@ -193,7 +193,7 @@ xv6fs_mount(uint dev, void *data)
 
 // Unmount function for xv6fs
 void
-xv6fs_kill_sb(struct superblock *sb)
+xv6fs_kill_sb(struct vfs_superblock *sb)
 {
   if(!sb)
     return;

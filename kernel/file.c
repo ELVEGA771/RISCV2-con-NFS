@@ -12,6 +12,7 @@
 #include "file.h"
 #include "stat.h"
 #include "proc.h"
+#include "vfs.h"
 
 struct devsw devsw[NDEV];
 struct {

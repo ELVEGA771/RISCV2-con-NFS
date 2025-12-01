@@ -140,12 +140,17 @@ nfs_read(struct nfs_mount *mnt, struct nfs_fh *fh, uint32 offset,
          uint32 count, void *buf, uint32 *bytes_read)
 {
   uchar args[256];
-  uchar result[8192];
+  uchar *result;
   struct xdr_buf xdr;
 
   // Limit read size
   if(count > 8192)
     count = 8192;
+
+  result = (uchar*)kalloc();
+  if(result == 0)
+    return -1;
+  memset(result, 0, PGSIZE);
 
   // Encode arguments
   xdr_init(&xdr, args, sizeof(args));
@@ -153,6 +158,8 @@ nfs_read(struct nfs_mount *mnt, struct nfs_fh *fh, uint32 offset,
   xdr_encode_uint32(&xdr, offset);
   xdr_encode_uint32(&xdr, count);
   xdr_encode_uint32(&xdr, 0);  // totalcount (unused in NFS v2)
+
+  if (count > 4000) count = 4000;
 
   // Make RPC call
   int len = rpc_call(mnt->server_ip, mnt->port, NFS_PROGRAM, NFS_VERSION,
@@ -180,6 +187,7 @@ nfs_read(struct nfs_mount *mnt, struct nfs_fh *fh, uint32 offset,
     return -1;
 
   *bytes_read = data_len;
+  kfree(result);
   return 0;
 }
 
@@ -188,13 +196,18 @@ int
 nfs_write(struct nfs_mount *mnt, struct nfs_fh *fh, uint32 offset,
           uint32 count, void *buf)
 {
-  uchar args[8192];
+  uchar *args;
   uchar result[512];
   struct xdr_buf xdr;
 
   // Limit write size
-  if(count > 8000)
-    count = 8000;
+  if(count > 4000)
+    count = 4000;
+
+  args = (uchar*)kalloc();
+  if(args == 0)
+    return -1;
+  memset(args, 0, PGSIZE);
 
   // Encode arguments
   xdr_init(&xdr, args, sizeof(args));
@@ -221,5 +234,6 @@ nfs_write(struct nfs_mount *mnt, struct nfs_fh *fh, uint32 offset,
   if(status != NFS_OK)
     return -1;
 
+  kfree(args);
   return count;
 }

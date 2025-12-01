@@ -56,10 +56,15 @@ int
 rpc_call(uint32 server_ip, ushort port, uint32 prog, uint32 vers, uint32 proc,
          void *args, int args_len, void *result, int result_max)
 {
-  uchar call_buf[8192];
+  uchar *call_buf;
   struct xdr_buf xdr;
   uint32 xid;
   int retries = 3;
+
+  call_buf = (uchar*)kalloc();
+  if(call_buf == 0)
+    return -1;
+  memset(call_buf, 0, PGSIZE);
 
   // Generate XID
   acquire(&rpc_lock);
@@ -167,10 +172,12 @@ got_reply:
 
   udp_unbind(sock);
   release(&rpc_lock);
+  kfree(call_buf);
   return result_len;
 
 bad_reply:
   udp_unbind(sock);
   release(&rpc_lock);
+  kfree(call_buf);  
   return -1;
 }
