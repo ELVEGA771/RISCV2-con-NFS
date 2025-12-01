@@ -52,11 +52,13 @@ udp_bind(ushort port, void (*handler)(uint32, ushort, void*, int))
 int
 udp_send(uint32 dst_ip, ushort dst_port, ushort src_port, void *data, int len)
 {
-  uchar packet[1500];
+  uchar *packet = kalloc();
   struct udp_hdr *hdr = (struct udp_hdr *)packet;
 
-  if(len > 1500 - sizeof(struct udp_hdr))
+  if(len > 1500 - sizeof(struct udp_hdr)){
+    kfree(packet);
     return -1;
+  }
 
   // Build UDP header
   hdr->src_port = htons(src_port);
@@ -66,6 +68,8 @@ udp_send(uint32 dst_ip, ushort dst_port, ushort src_port, void *data, int len)
 
   // Copy payload
   memmove(packet + sizeof(struct udp_hdr), data, len);
+
+  kfree(packet);
 
   // Send via IP layer
   return ip_send(dst_ip, IP_PROTO_UDP, packet, sizeof(struct udp_hdr) + len);

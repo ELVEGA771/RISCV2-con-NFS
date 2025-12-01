@@ -1,8 +1,3 @@
-//
-// driver for qemu's virtio network device.
-// based on virtio spec v1.1 and virtio_disk.c
-//
-
 #include "types.h"
 #include "riscv.h"
 #include "defs.h"
@@ -14,27 +9,32 @@
 #include "net.h"
 #include "virtio.h"
 
-// status register bits, from qemu virtio_config.h
-#define VIRTIO_CONFIG_S_ACKNOWLEDGE	1
-#define VIRTIO_CONFIG_S_DRIVER		2
-#define VIRTIO_CONFIG_S_DRIVER_OK	4
-#define VIRTIO_CONFIG_S_FEATURES_OK	8
+// Registros de configuración (Offsets)
+#define VIRTIO_MMIO_DEVICE_FEATURES_SEL 0x014
+#define VIRTIO_MMIO_DRIVER_FEATURES_SEL 0x024
 
-// device feature bits
-#define VIRTIO_NET_F_MAC 	(1 << 5)
+// Bits de estado
+#define VIRTIO_CONFIG_S_ACKNOWLEDGE 1
+#define VIRTIO_CONFIG_S_DRIVER      2
+#define VIRTIO_CONFIG_S_DRIVER_OK   4
+#define VIRTIO_CONFIG_S_FEATURES_OK 8
 
-// virtio network device
-// #define VIRTIO1 0x10002000L
-// #define VIRTIO1_IRQ 2
+// Características del dispositivo
+#define VIRTIO_NET_F_MAC    (1 << 5)
+#define VIRTIO_F_VERSION_1  (1ULL << 32) // Bit crítico para QEMU moderno
 
-// the address of virtio mmio register r.
-#define R(r) ((volatile uint32 *)(VIRTIO1 + (r)))
+// DIRECCIÓN DE LA TARJETA DE RED (Encontrada en el Slot 7)
+// Añadimos 'L' para que sea tratada como long
+#define VIRTIO_NET_BASE 0x10008000L 
+
+// Macro R para acceder a registros
+#define R(r) ((volatile uint32 *)(VIRTIO_NET_BASE + (r)))
 
 static struct spinlock vnet_lock;
 
 #define NUM 8
 
-// virtio network header
+// Estructura del header de red
 struct virtio_net_hdr {
   uint8 flags;
   uint8 gso_type;
@@ -45,11 +45,10 @@ struct virtio_net_hdr {
   uint16 num_buffers;
 } __attribute__((packed));
 
-// a single descriptor, from the spec.
-#define VRING_DESC_F_NEXT  1 // chained with another descriptor
-#define VRING_DESC_F_WRITE 2 // device writes (vs read)
+#define VRING_DESC_F_NEXT  1
+#define VRING_DESC_F_WRITE 2
 
-// these are specific to virtio network.
+// Descriptores y anillos
 static struct virtq_desc *rx_desc;
 static struct virtq_avail *rx_avail;
 static struct virtq_used *rx_used;
@@ -58,18 +57,15 @@ static struct virtq_desc *tx_desc;
 static struct virtq_avail *tx_avail;
 static struct virtq_used *tx_used;
 
-// our own book-keeping.
-static char rx_free[NUM];  // is a descriptor free?
-static uint16 rx_used_idx; // we've looked this far in used[].
+static char rx_free[NUM];
+static uint16 rx_used_idx;
 
 static char tx_free[NUM];
 static uint16 tx_used_idx;
 
-// Receive buffers
 #define RX_BUF_SIZE 2048
 static char rx_buf[NUM][RX_BUF_SIZE];
 
-// Transmit buffer
 #define TX_BUF_SIZE 2048
 static char tx_buf[TX_BUF_SIZE];
 
@@ -97,7 +93,6 @@ alloc_tx_desc()
   return -1;
 }
 
-
 void
 virtio_net_init(void)
 {
@@ -105,50 +100,65 @@ virtio_net_init(void)
 
   initlock(&vnet_lock, "virtio_net");
 
+  // Verificación básica
   if(*R(VIRTIO_MMIO_MAGIC_VALUE) != 0x74726976 ||
-     *R(VIRTIO_MMIO_VERSION) != 1 ||
      *R(VIRTIO_MMIO_DEVICE_ID) != 1 ||
      *R(VIRTIO_MMIO_VENDOR_ID) != 0x554d4551){
-    // No virtio-net device
+    // CORREGIDO: Cast explícito a uint64 para coincidir con %lx
+    printf("virtio_net: Device not found at 0x%lx\n", (uint64)VIRTIO_NET_BASE);
     return;
   }
 
-  // Reset device
+  // 1. Resetear dispositivo
   *R(VIRTIO_MMIO_STATUS) = status;
 
-  // Set ACKNOWLEDGE status bit
+  // 2. Setear bit ACKNOWLEDGE
   status |= VIRTIO_CONFIG_S_ACKNOWLEDGE;
   *R(VIRTIO_MMIO_STATUS) = status;
 
-  // Set DRIVER status bit
+  // 3. Setear bit DRIVER
   status |= VIRTIO_CONFIG_S_DRIVER;
   *R(VIRTIO_MMIO_STATUS) = status;
 
-  // Negotiate features
-  uint64 features = *R(VIRTIO_MMIO_DEVICE_FEATURES);
-  features &= ~(1ULL << VIRTIO_NET_F_MAC);
-  features &= ~(1ULL << VIRTIO_F_ANY_LAYOUT);
-  *R(VIRTIO_MMIO_DRIVER_FEATURES) = features;
+  // 4. Negociación de características (COMPLETA DE 64 BITS)
+  uint64 features = 0;
+  
+  // Leer parte baja (bits 0-31)
+  *R(VIRTIO_MMIO_DEVICE_FEATURES_SEL) = 0;
+  features = *R(VIRTIO_MMIO_DEVICE_FEATURES);
+  
+  // Leer parte alta (bits 32-63)
+  *R(VIRTIO_MMIO_DEVICE_FEATURES_SEL) = 1;
+  features |= ((uint64)(*R(VIRTIO_MMIO_DEVICE_FEATURES)) << 32);
 
-  // Tell device that feature negotiation is complete
+  // Aceptar características
+  *R(VIRTIO_MMIO_DRIVER_FEATURES_SEL) = 0;
+  *R(VIRTIO_MMIO_DRIVER_FEATURES) = (uint32)features;
+
+  *R(VIRTIO_MMIO_DRIVER_FEATURES_SEL) = 1;
+  *R(VIRTIO_MMIO_DRIVER_FEATURES) = (uint32)(features >> 32);
+
+  // 5. Setear FEATURES_OK
   status |= VIRTIO_CONFIG_S_FEATURES_OK;
   *R(VIRTIO_MMIO_STATUS) = status;
 
-  // Re-read status to ensure FEATURES_OK is set
+  // 6. Verificar si el dispositivo aceptó las características
   status = *R(VIRTIO_MMIO_STATUS);
-  if(!(status & VIRTIO_CONFIG_S_FEATURES_OK))
-    panic("virtio net FEATURES_OK unset");
+  if(!(status & VIRTIO_CONFIG_S_FEATURES_OK)){
+    printf("virtio_net: FEATURES_OK unset (Negotiation failed)\n");
+    return;
+  }
 
-  // Initialize RX queue (queue 0)
+  // 7. Inicializar colas
+  // Cola RX (índice 0)
   *R(VIRTIO_MMIO_QUEUE_SEL) = 0;
+  if(*R(VIRTIO_MMIO_QUEUE_READY))
+    panic("virtio net rx queue ready");
 
   uint32 max = *R(VIRTIO_MMIO_QUEUE_NUM_MAX);
-  if(max == 0)
-    panic("virtio net has no queue 0");
-  if(max < NUM)
-    panic("virtio net max queue too short");
+  if(max == 0) panic("virtio net has no queue 0");
+  if(max < NUM) panic("virtio net max queue too short");
 
-  // Allocate and zero queue memory
   rx_desc = kalloc();
   rx_avail = kalloc();
   rx_used = kalloc();
@@ -158,10 +168,7 @@ virtio_net_init(void)
   memset(rx_avail, 0, PGSIZE);
   memset(rx_used, 0, PGSIZE);
 
-  // Set queue size
   *R(VIRTIO_MMIO_QUEUE_NUM) = NUM;
-
-  // Write physical addresses
   *R(VIRTIO_MMIO_QUEUE_DESC_LOW) = (uint64)rx_desc;
   *R(VIRTIO_MMIO_QUEUE_DESC_HIGH) = (uint64)rx_desc >> 32;
   *R(VIRTIO_MMIO_DRIVER_DESC_LOW) = (uint64)rx_avail;
@@ -169,16 +176,13 @@ virtio_net_init(void)
   *R(VIRTIO_MMIO_DEVICE_DESC_LOW) = (uint64)rx_used;
   *R(VIRTIO_MMIO_DEVICE_DESC_HIGH) = (uint64)rx_used >> 32;
 
-  // Queue is ready
   *R(VIRTIO_MMIO_QUEUE_READY) = 0x1;
 
-  // All NUM descriptors start out unused
-  for(int i = 0; i < NUM; i++)
-    rx_free[i] = 1;
+  for(int i = 0; i < NUM; i++) rx_free[i] = 1;
 
-  // Initialize TX queue (queue 1)
+  // Cola TX (índice 1)
   *R(VIRTIO_MMIO_QUEUE_SEL) = 1;
-
+  
   tx_desc = kalloc();
   tx_avail = kalloc();
   tx_used = kalloc();
@@ -195,32 +199,26 @@ virtio_net_init(void)
   *R(VIRTIO_MMIO_DRIVER_DESC_HIGH) = (uint64)tx_avail >> 32;
   *R(VIRTIO_MMIO_DEVICE_DESC_LOW) = (uint64)tx_used;
   *R(VIRTIO_MMIO_DEVICE_DESC_HIGH) = (uint64)tx_used >> 32;
+
   *R(VIRTIO_MMIO_QUEUE_READY) = 0x1;
 
-  for(int i = 0; i < NUM; i++)
-    tx_free[i] = 1;
+  for(int i = 0; i < NUM; i++) tx_free[i] = 1;
 
-  // Tell device we're completely ready
+  // 8. Driver OK
   status |= VIRTIO_CONFIG_S_DRIVER_OK;
   *R(VIRTIO_MMIO_STATUS) = status;
 
-  // Prepare receive buffers
+  // Llenar descriptores RX
   for(int i = 0; i < NUM; i++) {
     int idx = alloc_rx_desc();
-    if(idx < 0)
-      panic("virtio_net_init: no rx desc");
-
     rx_desc[idx].addr = (uint64)rx_buf[i];
     rx_desc[idx].len = RX_BUF_SIZE;
     rx_desc[idx].flags = VRING_DESC_F_WRITE;
     rx_desc[idx].next = 0;
-
     rx_avail->ring[rx_avail->idx % NUM] = idx;
     __sync_synchronize();
     rx_avail->idx++;
   }
-
-  // Notify device about RX buffers
   *R(VIRTIO_MMIO_QUEUE_NOTIFY) = 0;
 
   printf("virtio_net: initialized\n");
@@ -229,32 +227,25 @@ virtio_net_init(void)
 static void
 free_tx_desc(int i)
 {
-  if(i >= NUM)
-    panic("free_tx_desc");
-  if(tx_free[i])
-    panic("free_tx_desc");
+  if(i >= NUM) panic("free_tx_desc");
+  if(tx_free[i]) panic("free_tx_desc");
   tx_desc[i].addr = 0;
   tx_free[i] = 1;
 }
 
-// Send a packet
 int
 virtio_net_send(void *data, int len)
 {
   acquire(&vnet_lock);
-
-  // Allocate TX descriptor
   int idx = alloc_tx_desc();
   if(idx < 0) {
     release(&vnet_lock);
     return -1;
   }
 
-  // Prepend virtio net header (all zeros for simple packets)
   struct virtio_net_hdr hdr;
   memset(&hdr, 0, sizeof(hdr));
 
-  // Copy header + data to tx buffer
   if(sizeof(hdr) + len > TX_BUF_SIZE) {
     free_tx_desc(idx);
     release(&vnet_lock);
@@ -264,25 +255,19 @@ virtio_net_send(void *data, int len)
   memmove(tx_buf, &hdr, sizeof(hdr));
   memmove(tx_buf + sizeof(hdr), data, len);
 
-  // Setup descriptor
   tx_desc[idx].addr = (uint64)tx_buf;
   tx_desc[idx].len = sizeof(hdr) + len;
   tx_desc[idx].flags = 0;
   tx_desc[idx].next = 0;
 
-  // Add to avail ring
   tx_avail->ring[tx_avail->idx % NUM] = idx;
   __sync_synchronize();
   tx_avail->idx++;
 
-  // Notify device (queue 1 for TX)
   *R(VIRTIO_MMIO_QUEUE_NOTIFY) = 1;
 
-  // Wait for completion (simple blocking)
-  while(tx_used_idx == tx_used->idx)
-    ;
+  while(tx_used_idx == tx_used->idx);
 
-  // Free descriptor
   int used_idx = tx_used->ring[tx_used_idx % NUM].id;
   free_tx_desc(used_idx);
   tx_used_idx++;
@@ -291,48 +276,34 @@ virtio_net_send(void *data, int len)
   return 0;
 }
 
-// Interrupt handler
 void
 virtio_net_intr(void)
 {
   acquire(&vnet_lock);
-
-  // Acknowledge interrupt
   *R(VIRTIO_MMIO_INTERRUPT_ACK) = *R(VIRTIO_MMIO_INTERRUPT_STATUS) & 0x3;
 
-  // Process received packets
   while(rx_used_idx != rx_used->idx) {
     int id = rx_used->ring[rx_used_idx % NUM].id;
     int len = rx_used->ring[rx_used_idx % NUM].len;
 
     if(len > sizeof(struct virtio_net_hdr)) {
-      // Skip virtio net header
       char *pkt = rx_buf[id] + sizeof(struct virtio_net_hdr);
       int pkt_len = len - sizeof(struct virtio_net_hdr);
-
-      // Process packet
       net_recv(pkt, pkt_len);
     }
 
-    // Refill RX descriptor
     rx_desc[id].addr = (uint64)rx_buf[id];
     rx_desc[id].len = RX_BUF_SIZE;
     rx_desc[id].flags = VRING_DESC_F_WRITE;
-
     rx_avail->ring[rx_avail->idx % NUM] = id;
     __sync_synchronize();
     rx_avail->idx++;
-
     rx_used_idx++;
   }
-
-  // Notify device about new RX buffers
   *R(VIRTIO_MMIO_QUEUE_NOTIFY) = 0;
-
   release(&vnet_lock);
 }
 
-// Network layer calls this to send packets
 int
 net_send(void *data, int len)
 {

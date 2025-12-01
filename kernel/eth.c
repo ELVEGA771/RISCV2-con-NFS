@@ -16,11 +16,13 @@ uchar local_mac[ETH_ADDR_LEN] = {0x52, 0x54, 0x00, 0x12, 0x34, 0x56};
 int
 eth_send(uchar *dst_mac, ushort type, void *payload, int len)
 {
-  uchar packet[1514];  // Max Ethernet frame
+  uchar *packet = kalloc();  // Max Ethernet frame
   struct eth_hdr *hdr = (struct eth_hdr *)packet;
 
-  if(len > 1514 - sizeof(struct eth_hdr))
+  if(len > 1514 - sizeof(struct eth_hdr)){
+    kfree(packet);
     return -1;
+  }
 
   // Build Ethernet header
   memmove(hdr->dst, dst_mac, ETH_ADDR_LEN);
@@ -30,6 +32,7 @@ eth_send(uchar *dst_mac, ushort type, void *payload, int len)
   // Copy payload
   memmove(packet + sizeof(struct eth_hdr), payload, len);
 
+  kfree(packet);
   // Send via network driver
   return net_send(packet, sizeof(struct eth_hdr) + len);
 }

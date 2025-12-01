@@ -45,13 +45,15 @@ ip_checksum(void *data, int len)
 int
 ip_send(uint32 dst_ip, uchar proto, void *data, int len)
 {
-  uchar packet[1500];
+  uchar *packet = kalloc();
   struct ip_hdr *hdr = (struct ip_hdr *)packet;
   uchar dst_mac[ETH_ADDR_LEN];
   uint32 next_hop;
 
-  if(len > 1500 - sizeof(struct ip_hdr))
+  if(len > 1500 - sizeof(struct ip_hdr)){
+    kfree(packet);
     return -1;
+  }
 
   // Determine next hop
   if((dst_ip & netmask) == (local_ip & netmask)) {
@@ -92,6 +94,8 @@ ip_send(uint32 dst_ip, uchar proto, void *data, int len)
 
   // Copy payload
   memmove(packet + sizeof(struct ip_hdr), data, len);
+
+  kfree(packet);
 
   // Send via Ethernet
   return eth_send(dst_mac, ETH_TYPE_IP, packet, sizeof(struct ip_hdr) + len);

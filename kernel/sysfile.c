@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "vfs.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -322,8 +323,22 @@ sys_open(void)
       end_op();
       return -1;
     }
+    char name[DIRSIZ];
+    struct inode *dp = vfs_nameiparent(path, name); // Usar versión VFS
+    if(dp == 0){
+      end_op();
+      return -1;
+    }
+    ilock(dp);
+    if(vfs_create(dp, name, T_FILE, &ip) < 0){ // Usar versión VFS
+      iunlockput(dp);
+      end_op();
+      return -1;
+    }
+    iunlockput(dp);
   } else {
-    if((ip = namei(path)) == 0){
+    // CAMBIO VFS: Usar vfs_namei en lugar de namei()
+    if((ip = vfs_namei(path)) == 0){ 
       end_op();
       return -1;
     }
@@ -414,7 +429,7 @@ sys_chdir(void)
   struct proc *p = myproc();
   
   begin_op();
-  if(argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0){
+  if(argstr(0, path, MAXPATH) < 0 || (ip = vfs_namei(path)) == 0){
     end_op();
     return -1;
   }
